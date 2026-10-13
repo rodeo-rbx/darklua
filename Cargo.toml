@@ -1,6 +1,6 @@
 [package]
 name = "darklua"
-version = "0.19.4"
+version = "0.19.5"
 authors = ["jeparlefrancais <jeparlefrancais21@gmail.com>"]
 edition = "2018"
 readme = "README.md"
