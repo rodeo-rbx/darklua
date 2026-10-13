@@ -251,7 +251,7 @@ impl FileWatcher {
         for event in events {
             let links = &self.links_file_watch;
 
-            let mut paths_iterator = event.event.paths.iter().map(|path| {
+            let paths_iterator = event.event.paths.iter().map(|path| {
                 links
                     .iter()
                     .find_map(|(link_location, link_path)| {

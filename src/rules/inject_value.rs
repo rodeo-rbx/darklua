@@ -203,7 +203,7 @@ impl RuleConfiguration for InjectGlobalValue {
                                         property: key.clone(),
                                         message: format!(
                                             "invalid json data assigned to the `{}` environment variable: {}",
-                                            &variable_name,
+                                            variable_name,
                                             err
                                         ),
                                     }
@@ -214,7 +214,7 @@ impl RuleConfiguration for InjectGlobalValue {
                                         property: key,
                                         message: format!(
                                             "unable to convert json data assigned to the `{}` environment variable to a lua expression: {}",
-                                            &variable_name,
+                                            variable_name,
                                             err
                                         ),
                                     }
@@ -227,7 +227,7 @@ impl RuleConfiguration for InjectGlobalValue {
                                 property: key,
                                 message: format!(
                                     "invalid string assigned to the `{}` environment variable",
-                                    &variable_name,
+                                    variable_name,
                                 ),
                             });
                         }
@@ -245,7 +245,7 @@ impl RuleConfiguration for InjectGlobalValue {
             } else {
                 log::warn!(
                     "environment variable `{}` is not defined. The rule `{}` will use `nil`",
-                    &variable_name,
+                    variable_name,
                     INJECT_GLOBAL_VALUE_RULE_NAME,
                 );
             }
