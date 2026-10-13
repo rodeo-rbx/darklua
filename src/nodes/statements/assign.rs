@@ -129,8 +129,7 @@ impl AssignStatement {
     /// creating it if missing.
     pub fn mutate_first_token(&mut self) -> &mut Token {
         self.variables
-            .iter_mut()
-            .next()
+            .first_mut()
             .expect("an assign statement must have at least one variable")
             .mutate_first_token()
     }

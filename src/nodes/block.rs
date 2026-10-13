@@ -302,7 +302,7 @@ impl Block {
         if let Some(tokens) = &mut self.tokens {
             tokens.semicolons.clear();
         }
-        self.statements.drain(..).collect()
+        std::mem::take(&mut self.statements)
     }
 
     /// Removes and returns the last statement of the block, if any.
