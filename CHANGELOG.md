@@ -1,5 +1,8 @@
 # Changelog
 
+* parse hexadecimal and binary numbers larger than 64 bits like Luau does: they saturate instead of failing to parse (e.g. `0x1_0000_0000_0000_0000`)
+* add `prefer_aliases` to the `luau` require mode so its `aliases` are used before aliases from `.luaurc` files
+* add `keep_unresolved_aliases` to the bundle configuration to leave require calls through an unknown alias, or an alias whose location doesn't exist, as they are
 * use the closest `.luaurc` configuration to each file when bundling code ([#339](https://github.com/seaofvoices/darklua/pull/339))
 
 ## 0.19.0

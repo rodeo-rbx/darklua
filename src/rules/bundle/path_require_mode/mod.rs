@@ -102,7 +102,16 @@ impl<'a, 'b, 'resources, PathLocatorImpl: PathLocator + Clone>
         {
             Ok(path) => path,
             Err(err) => {
-                self.errors.push(err.to_string());
+                if self.options.keep_unresolved_aliases() && err.is_unresolved_alias() {
+                    log::info!(
+                        "keep require to `{}` as is ({}) [from `{}`]",
+                        literal_require_path.display(),
+                        err,
+                        self.source.display()
+                    );
+                } else {
+                    self.errors.push(err.to_string());
+                }
                 return None;
             }
         };

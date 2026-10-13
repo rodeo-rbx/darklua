@@ -25,6 +25,7 @@ pub(crate) struct BundleOptions {
     modules_identifier: String,
     excludes: Option<wax::Any<'static>>,
     loaders: LoaderConfiguration,
+    keep_unresolved_aliases: bool,
 }
 
 impl BundleOptions {
@@ -58,6 +59,7 @@ impl BundleOptions {
                 Some(any_pattern)
             },
             loaders,
+            keep_unresolved_aliases: false,
         }
     }
 
@@ -78,6 +80,10 @@ impl BundleOptions {
 
     fn loaders(&self) -> &LoaderConfiguration {
         &self.loaders
+    }
+
+    fn keep_unresolved_aliases(&self) -> bool {
+        self.keep_unresolved_aliases
     }
 }
 
@@ -105,6 +111,11 @@ impl Bundler {
 
     pub(crate) fn with_modules_identifier(mut self, modules_identifier: impl Into<String>) -> Self {
         self.options.modules_identifier = modules_identifier.into();
+        self
+    }
+
+    pub(crate) fn with_keep_unresolved_aliases(mut self, keep_unresolved_aliases: bool) -> Self {
+        self.options.keep_unresolved_aliases = keep_unresolved_aliases;
         self
     }
 }

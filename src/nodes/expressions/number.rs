@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::num::IntErrorKind;
 use std::str::FromStr;
 
 use crate::generator::utils::write_number;
@@ -181,7 +182,9 @@ impl HexNumber {
     /// Computes the actual numerical value represented by this hexadecimal number.
     pub fn compute_value(&self) -> f64 {
         if let Some((exponent, _)) = self.exponent {
-            (self.integer * 2_u64.pow(exponent)) as f64
+            // in floating point: the integer can be as large as `u64::MAX`,
+            // so the product can overflow a u64
+            self.integer as f64 * 2_f64.powf(exponent as f64)
         } else {
             self.integer as f64
         }
@@ -440,6 +443,18 @@ fn filter_underscore(number: &str) -> String {
     number.chars().filter(|c| c != &'_').collect()
 }
 
+/// Parses the digits of a hexadecimal or binary literal like Luau does: Luau
+/// reads them with `strtoull`, which saturates to `u64::MAX` when the value
+/// does not fit in 64 bits instead of rejecting the literal. For example,
+/// `0x1_0000_0000_0000_0000` is valid Luau and evaluates to 2^64.
+fn parse_integer_digits(digits: &str, radix: u32) -> Option<u64> {
+    match u64::from_str_radix(digits, radix) {
+        Ok(value) => Some(value),
+        Err(err) if *err.kind() == IntErrorKind::PosOverflow => Some(u64::MAX),
+        Err(_) => None,
+    }
+}
+
 impl FromStr for NumberExpression {
     type Err = NumberParsingError;
 
@@ -466,23 +481,23 @@ impl FromStr for NumberExpression {
                             .and_then(|string| string.parse().ok())
                             .ok_or(Self::Err::InvalidHexadecimalExponent)?;
                         let before_exponent = value.get(position + 1..index).unwrap();
-                        let number = u64::from_str_radix(before_exponent, 16)
-                            .map_err(|_| Self::Err::InvalidHexadecimalNumber)?;
+                        let number = parse_integer_digits(before_exponent, 16)
+                            .ok_or(Self::Err::InvalidHexadecimalNumber)?;
 
                         HexNumber::new(number, is_uppercase)
                             .with_exponent(exponent, exponent_is_uppercase)
                     } else {
                         let filtered = filter_underscore(value.get(position + 1..).unwrap());
-                        let number = u64::from_str_radix(&filtered, 16)
-                            .map_err(|_| Self::Err::InvalidHexadecimalNumber)?;
+                        let number = parse_integer_digits(&filtered, 16)
+                            .ok_or(Self::Err::InvalidHexadecimalNumber)?;
 
                         HexNumber::new(number, is_uppercase)
                     }
                     .into()
                 } else if notation == 'b' || notation == 'B' {
                     let filtered = filter_underscore(value.get(position + 1..).unwrap());
-                    let number = u64::from_str_radix(&filtered, 2)
-                        .map_err(|_| Self::Err::InvalidBinaryNumber)?;
+                    let number =
+                        parse_integer_digits(&filtered, 2).ok_or(Self::Err::InvalidBinaryNumber)?;
 
                     BinaryNumber::new(number, is_uppercase).into()
                 } else {
@@ -660,6 +675,11 @@ mod test {
             parse_hex_number_with_mixed_case("0x1bF2A") => HexNumber::new(114_474, false),
             parse_hex_with_exponent("0x12p4") => HexNumber::new(18, false).with_exponent(4, false),
             parse_hex_with_exponent_uppercase("0xABP3") => HexNumber::new(171, false).with_exponent(3, true),
+            parse_hex_number_max_u64("0xFFFF_FFFF_FFFF_FFFF") => HexNumber::new(u64::MAX, false),
+            parse_hex_number_above_u64_saturates("0x1_0000_0000_0000_0000") => HexNumber::new(u64::MAX, false),
+            parse_hex_number_far_above_u64_saturates("0xFFFFFFFFFFFFFFFFFFFFFFFF") => HexNumber::new(u64::MAX, false),
+            parse_hex_with_exponent_above_u64_saturates("0x10000000000000000p2") => HexNumber::new(u64::MAX, false).with_exponent(2, false),
+            parse_binary_number_above_u64_saturates("0b1_0000000000000000000000000000000000000000000000000000000000000000") => BinaryNumber::new(u64::MAX, false),
             parse_binary_zero("0b0") => BinaryNumber::new(0, false),
             parse_binary_zero_with_underscore_before_b("0_b1") => BinaryNumber::new(1, false),
             parse_binary_zero_with_underscore("0b1010_1100") => BinaryNumber::new(0b1010_1100, false),
@@ -686,6 +706,9 @@ mod test {
             negative_hex_exponent_value_uppercase("0x1P-3") => NumberParsingError::InvalidHexadecimalExponent,
             invalid_digit_in_binary("0b190") => NumberParsingError::InvalidBinaryNumber,
             invalid_digit_in_binary_uppercase("0B190") => NumberParsingError::InvalidBinaryNumber,
+            invalid_digit_in_hex("0x1G") => NumberParsingError::InvalidHexadecimalNumber,
+            invalid_digit_in_hex_above_u64("0x1_0000_0000_0000_000G") => NumberParsingError::InvalidHexadecimalNumber,
+            missing_hex_digits("0x") => NumberParsingError::InvalidHexadecimalNumber,
         );
     }
 
@@ -718,6 +741,8 @@ mod test {
             hex_number("0x12") => 0x12,
             hex_number_with_letter("0x12a") => 0x12a,
             hex_with_exponent("0x12p4") => 0x120,
+            hex_number_above_u64("0x1_0000_0000_0000_0000") => 18446744073709551616.0,
+            hex_with_exponent_above_u64("0x10000000000000000p2") => 73786976294838206464.0,
             binary_zero("0b0") => 0b0,
             binary_ten("0b1010") => 0b1010,
         );

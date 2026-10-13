@@ -23,6 +23,12 @@ impl From<PathRequireMode> for BundleRequireMode {
     }
 }
 
+impl From<LuauRequireMode> for BundleRequireMode {
+    fn from(mode: LuauRequireMode) -> Self {
+        Self::Luau(mode)
+    }
+}
+
 impl FromStr for BundleRequireMode {
     type Err = String;
 

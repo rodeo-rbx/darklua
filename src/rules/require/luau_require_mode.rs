@@ -20,8 +20,14 @@ pub struct LuauRequireMode {
     use_luau_configuration: bool,
     #[serde(default, skip_serializing_if = "HashMap::is_empty", alias = "sources")]
     aliases: HashMap<String, PathBuf>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    prefer_aliases: bool,
     #[serde(skip)]
     luau_rc_aliases: Option<HashMap<String, PathBuf>>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 fn default_use_luau_configuration() -> bool {
@@ -33,6 +39,7 @@ impl Default for LuauRequireMode {
         Self {
             use_luau_configuration: default_use_luau_configuration(),
             aliases: Default::default(),
+            prefer_aliases: false,
             luau_rc_aliases: Default::default(),
         }
     }
@@ -67,6 +74,13 @@ impl LuauRequireMode {
     /// Add a new Luau alias to the require mode.
     pub fn with_alias(mut self, name: impl Into<String>, path: impl Into<PathBuf>) -> Self {
         self.aliases.insert(name.into(), path.into());
+        self
+    }
+
+    /// Set if the configured aliases take precedence over the aliases found in
+    /// `.luaurc` files. By default, `.luaurc` aliases are looked up first.
+    pub fn with_preferred_aliases(mut self, prefer_aliases: bool) -> Self {
+        self.prefer_aliases = prefer_aliases;
         self
     }
 
@@ -241,20 +255,28 @@ impl LuauRequireMode {
             rel.display()
         );
 
-        self.luau_rc_aliases
-            .as_ref()
-            .and_then(|aliases| aliases.get(name))
-            .map(ToOwned::to_owned)
-            .or_else(|| {
-                self.aliases.get(name).map(|alias| {
-                    log::trace!(
-                        " ⨽ found alias candidate `{}` (relative to `{}`)",
-                        alias.display(),
-                        rel.display()
-                    );
-                    rel.join(alias)
-                })
+        let from_luau_configuration = || {
+            self.luau_rc_aliases
+                .as_ref()
+                .and_then(|aliases| aliases.get(name))
+                .map(ToOwned::to_owned)
+        };
+        let from_aliases = || {
+            self.aliases.get(name).map(|alias| {
+                log::trace!(
+                    " ⨽ found alias candidate `{}` (relative to `{}`)",
+                    alias.display(),
+                    rel.display()
+                );
+                rel.join(alias)
             })
+        };
+
+        if self.prefer_aliases {
+            from_aliases().or_else(from_luau_configuration)
+        } else {
+            from_luau_configuration().or_else(from_aliases)
+        }
     }
 }
 
@@ -324,6 +346,54 @@ mod test {
         }
     }
 
+    mod get_source {
+        use super::*;
+
+        fn with_luau_rc_alias(mut require_mode: LuauRequireMode) -> LuauRequireMode {
+            require_mode.luau_rc_aliases = Some(HashMap::from([(
+                "@pkg".to_owned(),
+                PathBuf::from("/luaurc/pkg"),
+            )]));
+            require_mode
+        }
+
+        #[test]
+        fn luau_configuration_alias_is_used_first_by_default() {
+            let require_mode =
+                with_luau_rc_alias(LuauRequireMode::default().with_alias("@pkg", "config/pkg"));
+
+            assert_eq!(
+                require_mode.get_source("@pkg", Path::new("/project")),
+                Some(PathBuf::from("/luaurc/pkg"))
+            );
+        }
+
+        #[test]
+        fn configured_alias_is_used_first_when_preferred() {
+            let require_mode = with_luau_rc_alias(
+                LuauRequireMode::default()
+                    .with_alias("@pkg", "config/pkg")
+                    .with_preferred_aliases(true),
+            );
+
+            assert_eq!(
+                require_mode.get_source("@pkg", Path::new("/project")),
+                Some(PathBuf::from("/project/config/pkg"))
+            );
+        }
+
+        #[test]
+        fn luau_configuration_alias_is_used_when_preferred_aliases_do_not_have_it() {
+            let require_mode =
+                with_luau_rc_alias(LuauRequireMode::default().with_preferred_aliases(true));
+
+            assert_eq!(
+                require_mode.get_source("@pkg", Path::new("/project")),
+                Some(PathBuf::from("/luaurc/pkg"))
+            );
+        }
+    }
+
     mod is_module_folder_name {
         use super::*;
 
@@ -381,6 +451,25 @@ mod test {
 
             assert!(require_mode.use_luau_configuration);
             assert!(require_mode.luau_rc_aliases.is_none());
+        }
+
+        #[test]
+        fn serializes_preferred_aliases() {
+            let require_mode = LuauRequireMode::default().with_preferred_aliases(true);
+            let serialized = serde_json::to_string(&require_mode).unwrap();
+
+            assert_eq!(
+                serialized,
+                r#"{"use_luau_configuration":true,"prefer_aliases":true}"#
+            );
+        }
+
+        #[test]
+        fn deserializes_preferred_aliases() {
+            let json = r#"{"prefer_aliases":true}"#;
+            let require_mode: LuauRequireMode = serde_json::from_str(json).unwrap();
+
+            assert!(require_mode.prefer_aliases);
         }
 
         #[test]

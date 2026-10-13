@@ -181,7 +181,8 @@ impl Configuration {
                 bundle_config.excludes(),
                 self.loaders.clone(),
             )
-            .with_modules_identifier(bundle_config.modules_identifier());
+            .with_modules_identifier(bundle_config.modules_identifier())
+            .with_keep_unresolved_aliases(bundle_config.keep_unresolved_aliases());
             Some(bundler)
         } else {
             None
@@ -407,6 +408,12 @@ pub struct BundleConfiguration {
     modules_identifier: Option<String>,
     #[serde(default, skip_serializing_if = "HashSet::is_empty")]
     excludes: HashSet<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    keep_unresolved_aliases: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl BundleConfiguration {
@@ -416,7 +423,16 @@ impl BundleConfiguration {
             require_mode: require_mode.into(),
             modules_identifier: None,
             excludes: Default::default(),
+            keep_unresolved_aliases: false,
         }
+    }
+
+    /// Sets if require calls through an alias that does not resolve (an
+    /// unknown alias, or one whose location does not exist) are left as they
+    /// are instead of producing an error.
+    pub fn with_keep_unresolved_aliases(mut self, keep_unresolved_aliases: bool) -> Self {
+        self.keep_unresolved_aliases = keep_unresolved_aliases;
+        self
     }
 
     /// Sets the modules identifier for this bundle configuration.
@@ -444,6 +460,10 @@ impl BundleConfiguration {
 
     pub(crate) fn excludes(&self) -> impl Iterator<Item = &str> {
         self.excludes.iter().map(AsRef::as_ref)
+    }
+
+    pub(crate) fn keep_unresolved_aliases(&self) -> bool {
+        self.keep_unresolved_aliases
     }
 }
 

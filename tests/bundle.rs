@@ -905,3 +905,163 @@ data:
         }
     }
 }
+
+mod unresolved_aliases {
+    use super::*;
+
+    const KEEP_UNRESOLVED_ALIASES_LUAU_MODE: &str = "{ \"rules\": [], \"generator\": \"retain_lines\", \"bundle\": { \"require_mode\": \"luau\", \"keep_unresolved_aliases\": true } }";
+
+    const KEEP_UNRESOLVED_ALIASES_PATH_MODE: &str = "{ \"rules\": [], \"generator\": \"retain_lines\", \"bundle\": { \"require_mode\": \"path\", \"keep_unresolved_aliases\": true } }";
+
+    fn process_main(resources: &Resources) -> Result<String, Vec<String>> {
+        process(
+            resources,
+            Options::new("src/main.luau").with_output("out.luau"),
+        )
+        .unwrap()
+        .result()
+        .map_err(|errors| {
+            errors
+                .into_iter()
+                .map(|err| err.to_string())
+                .collect::<Vec<_>>()
+        })?;
+
+        Ok(resources.get("out.luau").unwrap())
+    }
+
+    #[test]
+    fn keeps_require_through_unknown_alias() {
+        let main = "local fs = if game then nil else require('@std/fs')\nreturn fs";
+        let resources = memory_resources!(
+            "src/main.luau" => main,
+            ".darklua.json" => KEEP_UNRESOLVED_ALIASES_LUAU_MODE,
+        );
+
+        pretty_assertions::assert_eq!(process_main(&resources).unwrap(), main);
+    }
+
+    #[test]
+    fn keeps_require_through_alias_whose_location_does_not_exist() {
+        let main = "local fs = require('@std/fs')\nreturn fs";
+        let resources = memory_resources!(
+            "src/main.luau" => main,
+            ".luaurc" => "{ \"aliases\": { \"std\": \"./missing/std\" } }",
+            ".darklua.json" => KEEP_UNRESOLVED_ALIASES_LUAU_MODE,
+        );
+
+        pretty_assertions::assert_eq!(process_main(&resources).unwrap(), main);
+    }
+
+    #[test]
+    fn keeps_require_through_unknown_source_in_path_mode() {
+        let main = "local fs = require('@lune/fs')\nreturn fs";
+        let resources = memory_resources!(
+            "src/main.luau" => main,
+            ".darklua.json" => KEEP_UNRESOLVED_ALIASES_PATH_MODE,
+        );
+
+        pretty_assertions::assert_eq!(process_main(&resources).unwrap(), main);
+    }
+
+    #[test]
+    fn bundles_resolved_aliases_next_to_kept_ones() {
+        let resources = memory_resources!(
+            "src/main.luau" => "local value = require('@pkg/value')\nlocal fs = require('@std/fs')\nreturn value, fs",
+            "packages/value.luau" => "return 'bundled'",
+            ".luaurc" => "{ \"aliases\": { \"pkg\": \"./packages\" } }",
+            ".darklua.json" => KEEP_UNRESOLVED_ALIASES_LUAU_MODE,
+        );
+
+        let out = process_main(&resources).unwrap();
+
+        assert!(out.contains("'bundled'"), "{}", out);
+        assert!(out.contains("require('@std/fs')"), "{}", out);
+        assert!(!out.contains("require('@pkg/value')"), "{}", out);
+    }
+
+    #[test]
+    fn still_errors_on_missing_module_in_existing_alias() {
+        let resources = memory_resources!(
+            "src/main.luau" => "return require('@pkg/missing')",
+            "packages/value.luau" => "return true",
+            ".luaurc" => "{ \"aliases\": { \"pkg\": \"./packages\" } }",
+            ".darklua.json" => KEEP_UNRESOLVED_ALIASES_LUAU_MODE,
+        );
+
+        let errors = process_main(&resources).unwrap_err();
+
+        assert!(errors.join("\n").contains("unable to find"), "{:?}", errors);
+    }
+
+    #[test]
+    fn still_errors_on_missing_relative_file() {
+        let resources = memory_resources!(
+            "src/main.luau" => "return require('./missing')",
+            ".darklua.json" => KEEP_UNRESOLVED_ALIASES_LUAU_MODE,
+        );
+
+        assert!(process_main(&resources).is_err());
+    }
+
+    #[test]
+    fn errors_on_alias_whose_location_does_not_exist_by_default() {
+        let resources = memory_resources!(
+            "src/main.luau" => "return require('@std/fs')",
+            ".luaurc" => "{ \"aliases\": { \"std\": \"./missing/std\" } }",
+            ".darklua.json" => DARKLUA_BUNDLE_ONLY_READABLE_CONFIG_LUAU_MODE,
+        );
+
+        let errors = process_main(&resources).unwrap_err().join("\n");
+
+        assert!(
+            errors.contains("source `@std` points to") && errors.contains("which does not exist"),
+            "{}",
+            errors
+        );
+    }
+
+    #[test]
+    fn preferred_aliases_override_luau_configuration() {
+        let resources = memory_resources!(
+            "src/main.luau" => "return require('@std/fs')",
+            "typedefs/std/fs.luau" => "return 'from luaurc'",
+            "adapters/std/fs.luau" => "return 'from aliases'",
+            ".luaurc" => "{ \"aliases\": { \"std\": \"./typedefs/std\" } }",
+            ".darklua.json" => "{ \"rules\": [], \"generator\": \"retain_lines\", \"bundle\": { \"require_mode\": { \"name\": \"luau\", \"aliases\": { \"@std\": \"./adapters/std\" }, \"prefer_aliases\": true } } }",
+        );
+
+        let out = process_main(&resources).unwrap();
+
+        assert!(out.contains("'from aliases'"), "{}", out);
+        assert!(!out.contains("'from luaurc'"), "{}", out);
+    }
+
+    #[test]
+    fn luau_configuration_is_used_first_by_default() {
+        let resources = memory_resources!(
+            "src/main.luau" => "return require('@std/fs')",
+            "typedefs/std/fs.luau" => "return 'from luaurc'",
+            "adapters/std/fs.luau" => "return 'from aliases'",
+            ".luaurc" => "{ \"aliases\": { \"std\": \"./typedefs/std\" } }",
+            ".darklua.json" => "{ \"rules\": [], \"generator\": \"retain_lines\", \"bundle\": { \"require_mode\": { \"name\": \"luau\", \"aliases\": { \"@std\": \"./adapters/std\" } } } }",
+        );
+
+        let out = process_main(&resources).unwrap();
+
+        assert!(out.contains("'from luaurc'"), "{}", out);
+    }
+
+    #[test]
+    fn bundles_hex_literal_larger_than_64_bits() {
+        let resources = memory_resources!(
+            "src/main.luau" => "return require('./value')",
+            "src/value.luau" => "return 0x1_0000_0000_0000_0000",
+            ".darklua.json" => KEEP_UNRESOLVED_ALIASES_LUAU_MODE,
+        );
+
+        let out = process_main(&resources).unwrap();
+
+        assert!(out.contains("0x1_0000_0000_0000_0000"), "{}", out);
+    }
+}

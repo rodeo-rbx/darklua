@@ -3,6 +3,27 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::{utils, DarkluaError, Resources};
+
+/// Whether an alias source location exists, as a directory or as a module file
+/// (an alias can point directly to a file).
+pub(crate) fn source_location_exists(
+    resources: &Resources,
+    location: &Path,
+    module_folder_name: &str,
+) -> Result<bool, DarkluaError> {
+    let location = utils::normalize_path_with_current_dir(location);
+    if resources.exists(&location)? || resources.is_directory(&location)? {
+        return Ok(true);
+    }
+    for potential_path in find_require_paths(&location, module_folder_name) {
+        if resources.is_file(&potential_path)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 pub(crate) fn find_require_paths<'a, 'b, 'c>(
     path: &'a Path,
     module_folder_name: &'b str,

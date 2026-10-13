@@ -62,6 +62,11 @@ enum ErrorKind {
         location: String,
         message: String,
     },
+    UnresolvedAlias {
+        location: String,
+        alias: String,
+        missing_target: Option<PathBuf>,
+    },
     RequireUnknownResource {
         path: PathBuf,
     },
@@ -225,6 +230,24 @@ impl DarkluaError {
             location: path.into(),
             message: message.into(),
         })
+    }
+
+    /// A require through an alias that has no source location (`missing_target`
+    /// is `None`), or whose source location does not exist.
+    pub(crate) fn unresolved_alias(
+        location: impl Into<String>,
+        alias: impl Into<String>,
+        missing_target: Option<PathBuf>,
+    ) -> Self {
+        Self::new(ErrorKind::UnresolvedAlias {
+            location: location.into(),
+            alias: alias.into(),
+            missing_target,
+        })
+    }
+
+    pub(crate) fn is_unresolved_alias(&self) -> bool {
+        matches!(*self.kind, ErrorKind::UnresolvedAlias { .. })
     }
 
     pub(crate) fn require_unknown_resource(path: impl Into<PathBuf>) -> Self {
@@ -436,6 +459,24 @@ impl Display for DarkluaError {
                     location, message
                 )?;
             }
+            ErrorKind::UnresolvedAlias {
+                location,
+                alias,
+                missing_target,
+            } => match missing_target {
+                None => write!(
+                    f,
+                    "unable to require resource at `{}`: unknown source name `{}`",
+                    location, alias
+                )?,
+                Some(target) => write!(
+                    f,
+                    "unable to require resource at `{}`: source `{}` points to `{}`, which does not exist",
+                    location,
+                    alias,
+                    target.display()
+                )?,
+            },
             ErrorKind::RequireUnknownResource { path } => {
                 write!(f, "unable to require unknown resource at `{}` (configure content loaders to load this file)", path.display())?;
             }

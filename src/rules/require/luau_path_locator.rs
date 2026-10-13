@@ -43,6 +43,7 @@ impl super::PathLocator for LuauPathLocator<'_, '_> {
         source: &Path,
     ) -> Result<PathBuf, DarkluaError> {
         let mut path = path.into();
+        let literal_path = path.display().to_string();
         log::trace!(
             "find require path for `{}` from `{}` (luau mode)",
             path.display(),
@@ -51,6 +52,8 @@ impl super::PathLocator for LuauPathLocator<'_, '_> {
         self.load_aliases(source)?;
 
         let require_mode = self.luau_require_mode.borrow();
+        // the alias and its source location, when the path goes through one
+        let mut alias_source: Option<(String, PathBuf)> = None;
 
         if is_require_relative(&path) {
             if require_mode.is_module_folder_name(source) {
@@ -76,11 +79,13 @@ impl super::PathLocator for LuauPathLocator<'_, '_> {
                 let mut extra_module_location = require_mode
                     .get_source(source_name, self.extra_module_relative_location)
                     .ok_or_else(|| {
-                        DarkluaError::invalid_resource_path(
+                        DarkluaError::unresolved_alias(
                             path.display().to_string(),
-                            format!("unknown source name `{}`", source_name),
+                            source_name,
+                            None,
                         )
                     })?;
+                alias_source = Some((source_name.to_owned(), extra_module_location.clone()));
                 extra_module_location.extend(components);
                 path = extra_module_location;
             }
@@ -92,6 +97,20 @@ impl super::PathLocator for LuauPathLocator<'_, '_> {
         {
             if self.resources.is_file(&potential_path)? {
                 return Ok(utils::normalize_path_with_current_dir(potential_path));
+            }
+        }
+
+        if let Some((alias, source_location)) = alias_source {
+            if !path_iterator::source_location_exists(
+                self.resources,
+                &source_location,
+                require_mode.module_folder_name(),
+            )? {
+                return Err(DarkluaError::unresolved_alias(
+                    literal_path,
+                    alias,
+                    Some(source_location),
+                ));
             }
         }
 

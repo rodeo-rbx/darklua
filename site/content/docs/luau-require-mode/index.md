@@ -30,6 +30,9 @@ The Luau require mode can be defined as the string 'luau' to use all the default
 
   // optional (defaults to true)
   use_luau_configuration: true,
+
+  // optional (defaults to false)
+  prefer_aliases: false,
 }
 ```
 
@@ -75,3 +78,5 @@ Luau configuration files are named `.luaurc` and they can contain an `aliases` p
 The value of `use_luau_configuration` will change how darklua finds new aliases. Before looking at the `aliases` value, darklua will attempt to find the nearest `.luaurc` configuration file to each file it processes. If it finds one, it will load the aliases.
 
 This behavior is enabled by default. It can be disabled by setting `use_luau_configuration` to `false`.
+
+When an alias is defined both in a `.luaurc` file and in `aliases`, the `.luaurc` alias is used. Set `prefer_aliases` to `true` to use the `aliases` value instead.

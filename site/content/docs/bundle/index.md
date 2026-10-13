@@ -81,6 +81,21 @@ For example, to avoid bundling any require to paths starting with `@lune`:
 
 These patterns are similar to Unix globs, but for more information about the differences and the syntax, see the [pattern library documentation](https://github.com/olson-sean-k/wax/blob/master/README.md#patterns) used by darklua.
 
+### Keep Unresolved Aliases
+
+By default, a require call through an alias that darklua can't resolve is an error. Set `keep_unresolved_aliases` to `true` to leave those require calls as they are instead. An alias is unresolved when it isn't defined, or when its location doesn't exist.
+
+```json5
+{
+  bundle: {
+    require_mode: "luau",
+    keep_unresolved_aliases: true,
+  },
+}
+```
+
+This is useful for code that requires modules from another runtime in a branch that never runs in the bundled program. Requires to a missing file under an alias that exists, and relative requires to missing files, are still errors.
+
 ### Modules Identifier
 
 When darklua bundles multiple modules into a single file, it uses a variable to store all the required modules. This parameter lets you modify that variable name if needed.
